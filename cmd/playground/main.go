@@ -14,12 +14,17 @@ import (
 	"github.com/x1unix/go-playground/pkg/analyzer"
 	"github.com/x1unix/go-playground/pkg/compiler"
 	"github.com/x1unix/go-playground/pkg/compiler/storage"
+	"github.com/x1unix/go-playground/pkg/goplay"
 	"github.com/x1unix/go-playground/pkg/langserver"
 	"go.uber.org/zap"
 )
 
+// Version is server version symbol. Should be replaced by linker during build
+var Version = "testing"
+
 type appArgs struct {
 	packagesFile    string
+	playgroundUrl   string
 	addr            string
 	debug           bool
 	buildDir        string
@@ -36,6 +41,7 @@ func main() {
 	flag.StringVar(&args.addr, "addr", ":8080", "TCP Listen address")
 	flag.StringVar(&args.buildDir, "wasm-build-dir", os.TempDir(), "Directory for WASM builds")
 	flag.StringVar(&args.cleanupInterval, "clean-interval", "10m", "Build directory cleanup interval")
+	flag.StringVar(&args.playgroundUrl, "playground-url", goplay.DefaultPlaygroundURL, "Go Playground URL")
 	flag.BoolVar(&args.debug, "debug", false, "Enable debug mode")
 
 	goRoot, ok := os.LookupEnv("GOROOT")
@@ -46,7 +52,7 @@ func main() {
 
 	flag.Parse()
 	l := getLogger(args.debug)
-	defer l.Sync()
+	defer l.Sync() //nolint:errcheck
 	if err := start(goRoot, args); err != nil {
 		l.Sugar().Fatal(err)
 	}
@@ -75,7 +81,9 @@ func start(goRoot string, args appArgs) error {
 		return fmt.Errorf("invalid cleanup interval parameter: %s", err)
 	}
 
+	zap.S().Info("Server version: ", Version)
 	zap.S().Infof("GOROOT is %q", goRoot)
+	zap.S().Infof("Playground url: %q", args.playgroundUrl)
 	zap.S().Infof("Packages file is %q", args.packagesFile)
 	zap.S().Infof("Cleanup interval is %s", cleanInterval.String())
 	analyzer.SetRoot(goRoot)
@@ -94,7 +102,8 @@ func start(goRoot string, args appArgs) error {
 	go store.StartCleaner(ctx, cleanInterval, nil)
 
 	r := mux.NewRouter()
-	langserver.New(packages, compiler.NewBuildService(zap.S(), store)).
+	pg := goplay.NewClient(args.playgroundUrl, goplay.DefaultUserAgent, 15*time.Second)
+	langserver.New(Version, pg, packages, compiler.NewBuildService(zap.S(), store)).
 		Mount(r.PathPrefix("/api").Subrouter())
 	r.PathPrefix("/").Handler(langserver.SpaFileServer("./public"))
 
@@ -134,7 +143,6 @@ func startHttpServer(ctx context.Context, wg *sync.WaitGroup, server *http.Serve
 		if err := server.Shutdown(shutdownCtx); err != nil {
 			logger.Errorf("Could not gracefully shutdown the server: %v\n", err)
 		}
-		return
 	}()
 
 	wg.Add(1)

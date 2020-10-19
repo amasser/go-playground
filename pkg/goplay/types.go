@@ -18,6 +18,7 @@ type FmtResponse struct {
 	Error string
 }
 
+// HasError returns error if any occurred
 func (r *FmtResponse) HasError() error {
 	if r.Error == "" {
 		return nil
@@ -42,14 +43,16 @@ type CompileResponse struct {
 	Errors string
 }
 
-func (r CompileResponse) GetBody() string {
-	if r.Body == nil {
+// GetBody returns response body
+func (cr CompileResponse) GetBody() string {
+	if cr.Body == nil {
 		return ""
 	}
 
-	return *r.Body
+	return *cr.Body
 }
 
+// HasError returns error if any occurred
 func (cr *CompileResponse) HasError() error {
 	if cr.Errors == "" {
 		return nil

@@ -1,29 +1,38 @@
-<p style="text-align: center;">
-	
 # Better Go Playground
 
-Improved Go Playground powered by Monaco Editor and React
+[![Docker Hub](https://img.shields.io/docker/pulls/x1unix/go-playground.svg)](https://hub.docker.com/r/x1unix/go-playground)
+[![Docker Hub](https://img.shields.io/docker/v/x1unix/go-playground.svg?sort=semver)](https://hub.docker.com/r/x1unix/go-playground)
+[![Build Status](https://travis-ci.org/x1unix/go-playground.svg?branch=master)](https://travis-ci.org/x1unix/go-playground) 
+[![Coverage Status](https://coveralls.io/repos/github/x1unix/go-playground/badge.svg?branch=dev)](https://coveralls.io/github/x1unix/go-playground?branch=dev)
+[![Goreportcard](https://goreportcard.com/badge/github.com/x1unix/go-playground)](https://goreportcard.com/report/github.com/x1unix/go-playground)
 
-![alt text](./docs/demo.gif)
-</p>
+Improved Go Playground powered by Monaco Editor and React - [https://goplay.tools/](https://goplay.tools)
+
+![alt text](docs/demo.gif)
 
 ## Features
 
+* 🌚 Dark theme
 * 💡 Code autocomplete
 * 💾 Load and save files
-* 🛠 [WebAssembly](https://github.com/golang/go/wiki/WebAssembly) support (see [latest release notes](https://github.com/x1unix/go-playground/releases/tag/v1.3.0))
-* 🌚 Dark theme
+* 📔 Snippets and tutorials
+* ⚙ Customization (fonts, ligatures, etc)
+* 🛠 [WebAssembly](https://github.com/golang/go/wiki/WebAssembly) support
 
 
-And more
-
-## Demo
-
-[http://goplay.x1unix.com/](http://goplay.x1unix.com/)
+And more !
 
 ## Installation
 
-Playground is available via [Docker Hub](https://hub.docker.com/r/x1unix/go-playground) or can be built and run locally (**Go 1.12+** and **Node.js** required):
+### Docker
+
+Playground is available via [Docker Hub](https://hub.docker.com/r/x1unix/go-playground).
+
+See [wiki](https://github.com/x1unix/go-playground/wiki/Docker) for usage info.
+
+### Local instance
+
+Service can be built and run locally (**Go 1.12+** and **Node.js** required):
 
 ```
 $ git clone https://github.com/x1unix/go-playground.git
@@ -39,6 +48,13 @@ $ ./playground -f ./data/packages.json -debug
 ```
 
 Use `-help` to get information about command params
+
+### Third-party credits
+
+* Default playground run server provided by [play.golang.org](https://play.golang.org)
+* Code for templates and tutorials provided by [gobyexample.com](https://gobyexample.com/)
+* Code completion snippets were inspired by [tj/vscode-snippets](https://github.com/tj/vscode-snippets/blob/master/go.json)
+
 
 ## Contributors
 

@@ -1,5 +1,6 @@
 import * as monaco from 'monaco-editor';
 import {IAPIClient} from '../services/api';
+import snippets from './snippets'
 
 // Import aliases
 type CompletionList = monaco.languages.CompletionList;
@@ -51,12 +52,34 @@ class GoCompletionItemProvider implements monaco.languages.CompletionItemProvide
             return Promise.resolve({suggestions: []});
         }
 
+        let word = model.getWordUntilPosition(position);
+        let range = {
+            startLineNumber: position.lineNumber,
+            endLineNumber: position.lineNumber,
+            startColumn: word.startColumn,
+            endColumn: word.endColumn
+        };
+
+        // filter snippets by prefix.
+        // usually monaco does that but not always in right way
+        const relatedSnippets = snippets
+            .filter(s => s.label.toString().startsWith(query.value))
+            .map(s => ({...s, range}));
+
         try {
-            const resp = await this.client.getSuggestions(query);
-            return Promise.resolve(resp);
+            const {suggestions} = await this.client.getSuggestions(query);
+            if (!suggestions) {
+                return {
+                    suggestions: relatedSnippets
+                }
+            }
+
+            return {
+                suggestions: relatedSnippets.concat(suggestions.map(s => ({...s, range})))
+            }
         } catch (err) {
             console.error(`Failed to get code completion from server: ${err.message}`);
-            return Promise.resolve({suggestions: []});
+            return {suggestions: relatedSnippets};
         }
     }
 }

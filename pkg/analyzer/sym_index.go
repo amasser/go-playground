@@ -1,9 +1,15 @@
 package analyzer
 
+// SymbolIndex is Go symbols index
 type SymbolIndex struct {
 	Symbols []*CompletionItem
 	nameMap map[string]*CompletionItem
 	charMap map[string][]*CompletionItem
+}
+
+// Len returns symbols length
+func (si *SymbolIndex) Len() int {
+	return len(si.Symbols)
 }
 
 func emptySymbolIndex() SymbolIndex {
@@ -14,7 +20,8 @@ func emptySymbolIndex() SymbolIndex {
 	}
 }
 
-func newSymbolIndex(items []*CompletionItem) SymbolIndex {
+// NewSymbolIndex creates a new symbol index from completion items
+func NewSymbolIndex(items []*CompletionItem) SymbolIndex {
 	idx := SymbolIndex{
 		Symbols: items,
 		nameMap: make(map[string]*CompletionItem, len(items)),
@@ -30,6 +37,7 @@ func newSymbolIndex(items []*CompletionItem) SymbolIndex {
 	return idx
 }
 
+// Append appends symbols to index
 func (si *SymbolIndex) Append(items ...*CompletionItem) {
 	for _, i := range items {
 		if i == nil {
@@ -42,10 +50,12 @@ func (si *SymbolIndex) Append(items ...*CompletionItem) {
 	}
 }
 
+// SymbolByName returns symbol by name
 func (si SymbolIndex) SymbolByName(name string) *CompletionItem {
 	return si.nameMap[name]
 }
 
+// Match matches symbols by prefix char
 func (si SymbolIndex) Match(char string) []*CompletionItem {
 	return si.charMap[char]
 }

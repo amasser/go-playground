@@ -28,24 +28,32 @@ const (
 	artifactParamVal = "artifactId"
 )
 
+// Service is language server service
 type Service struct {
-	log      *zap.SugaredLogger
-	index    analyzer.PackageIndex
-	compiler compiler.BuildService
-	limiter  *rate.Limiter
+	version    string
+	log        *zap.SugaredLogger
+	index      analyzer.PackageIndex
+	compiler   compiler.BuildService
+	playground *goplay.Client
+	limiter    *rate.Limiter
 }
 
-func New(packages []*analyzer.Package, builder compiler.BuildService) *Service {
+// New is Service constructor
+func New(version string, playground *goplay.Client, packages []*analyzer.Package, builder compiler.BuildService) *Service {
 	return &Service{
-		compiler: builder,
-		log:      zap.S().Named("langserver"),
-		index:    analyzer.BuildPackageIndex(packages),
-		limiter:  rate.NewLimiter(rate.Every(frameTime), compileRequestsPerFrame),
+		compiler:   builder,
+		version:    version,
+		playground: playground,
+		log:        zap.S().Named("langserver"),
+		index:      analyzer.BuildPackageIndex(packages),
+		limiter:    rate.NewLimiter(rate.Every(frameTime), compileRequestsPerFrame),
 	}
 }
 
 // Mount mounts service on route
 func (s *Service) Mount(r *mux.Router) {
+	r.Path("/version").
+		HandlerFunc(WrapHandler(s.HandleGetVersion))
 	r.Path("/suggest").
 		HandlerFunc(WrapHandler(s.HandleGetSuggestion))
 	r.Path("/run").Methods(http.MethodPost).
@@ -83,10 +91,6 @@ func (s *Service) lookupBuiltin(val string) (*SuggestionsResponse, error) {
 }
 
 func (s *Service) provideSuggestion(req SuggestionRequest) (*SuggestionsResponse, error) {
-	if req.Value == "" {
-		return nil, fmt.Errorf("empty suggestion request value, nothing to provide")
-	}
-
 	// Provide package suggestions (if requested)
 	if req.PackageName != "" {
 		pkg, ok := s.index.PackageByName(req.PackageName)
@@ -98,14 +102,32 @@ func (s *Service) provideSuggestion(req SuggestionRequest) (*SuggestionsResponse
 			return nil, fmt.Errorf("failed to analyze package %q: %s", req.PackageName, err)
 		}
 
+		var symbols []*analyzer.CompletionItem
+		if req.Value != "" {
+			symbols = pkg.SymbolByChar(req.Value)
+		} else {
+			symbols = pkg.AllSymbols()
+		}
+
 		return &SuggestionsResponse{
-			Suggestions: pkg.SymbolByChar(req.Value),
+			Suggestions: symbols,
 		}, nil
+	}
+
+	if req.Value == "" {
+		return nil, fmt.Errorf("empty suggestion request value, nothing to provide")
 	}
 
 	return s.lookupBuiltin(req.Value)
 }
 
+// HandleGetVersion handles /api/version
+func (s *Service) HandleGetVersion(w http.ResponseWriter, r *http.Request) error {
+	WriteJSON(w, VersionResponse{Version: s.version})
+	return nil
+}
+
+// HandleGetSuggestion handles code suggestion
 func (s *Service) HandleGetSuggestion(w http.ResponseWriter, r *http.Request) error {
 	q := r.URL.Query()
 	value := q.Get("value")
@@ -120,13 +142,14 @@ func (s *Service) HandleGetSuggestion(w http.ResponseWriter, r *http.Request) er
 	return nil
 }
 
+// HandleFormatCode handles goimports action
 func (s *Service) HandleFormatCode(w http.ResponseWriter, r *http.Request) error {
 	src, err := getPayloadFromRequest(r)
 	if err != nil {
 		return err
 	}
 
-	formatted, _, err := goImportsCode(r.Context(), src)
+	formatted, _, err := s.goImportsCode(r.Context(), src)
 	if err != nil {
 		if goplay.IsCompileError(err) {
 			return NewHTTPError(http.StatusBadRequest, err)
@@ -140,8 +163,9 @@ func (s *Service) HandleFormatCode(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
+// HandleShare handles snippet share
 func (s *Service) HandleShare(w http.ResponseWriter, r *http.Request) error {
-	shareID, err := goplay.Share(r.Context(), r.Body)
+	shareID, err := s.playground.Share(r.Context(), r.Body)
 	defer r.Body.Close()
 	if err != nil {
 		if err == goplay.ErrSnippetTooLarge {
@@ -156,10 +180,11 @@ func (s *Service) HandleShare(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// HandleGetSnippet handles snippet load
 func (s *Service) HandleGetSnippet(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	snippetID := vars["id"]
-	snippet, err := goplay.GetSnippet(r.Context(), snippetID)
+	snippet, err := s.playground.GetSnippet(r.Context(), snippetID)
 	if err != nil {
 		if err == goplay.ErrSnippetNotFound {
 			return Errorf(http.StatusNotFound, "snippet %q not found", snippetID)
@@ -179,6 +204,7 @@ func (s *Service) HandleGetSnippet(w http.ResponseWriter, r *http.Request) error
 	return nil
 }
 
+// HandleRunCode handles code run
 func (s *Service) HandleRunCode(w http.ResponseWriter, r *http.Request) error {
 	src, err := getPayloadFromRequest(r)
 	if err != nil {
@@ -192,7 +218,7 @@ func (s *Service) HandleRunCode(w http.ResponseWriter, r *http.Request) error {
 
 	var changed bool
 	if shouldFormat {
-		src, changed, err = goImportsCode(r.Context(), src)
+		src, changed, err = s.goImportsCode(r.Context(), src)
 		if err != nil {
 			if goplay.IsCompileError(err) {
 				return NewHTTPError(http.StatusBadRequest, err)
@@ -202,7 +228,7 @@ func (s *Service) HandleRunCode(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	res, err := goplay.Compile(r.Context(), src)
+	res, err := s.playground.Compile(r.Context(), src)
 	if err != nil {
 		return err
 	}
@@ -222,6 +248,7 @@ func (s *Service) HandleRunCode(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
+// HandleArtifactRequest handles WASM build artifact request
 func (s *Service) HandleArtifactRequest(w http.ResponseWriter, r *http.Request) error {
 	vars := mux.Vars(r)
 	artifactId := storage.ArtifactID(vars[artifactParamVal])
@@ -249,9 +276,11 @@ func (s *Service) HandleArtifactRequest(w http.ResponseWriter, r *http.Request) 
 	return nil
 }
 
+// HandleCompile handles WASM build request
 func (s *Service) HandleCompile(w http.ResponseWriter, r *http.Request) error {
 	// Limit for request timeout
-	ctx, _ := context.WithDeadline(r.Context(), time.Now().Add(maxBuildTimeDuration))
+	ctx, cancel := context.WithDeadline(r.Context(), time.Now().Add(maxBuildTimeDuration))
+	defer cancel()
 
 	// Wait for our queue in line for compilation
 	if err := s.limiter.Wait(ctx); err != nil {
@@ -270,7 +299,7 @@ func (s *Service) HandleCompile(w http.ResponseWriter, r *http.Request) error {
 
 	var changed bool
 	if shouldFormat {
-		src, changed, err = goImportsCode(r.Context(), src)
+		src, changed, err = s.goImportsCode(r.Context(), src)
 		if err != nil {
 			if goplay.IsCompileError(err) {
 				return NewHTTPError(http.StatusBadRequest, err)
@@ -298,4 +327,26 @@ func (s *Service) HandleCompile(w http.ResponseWriter, r *http.Request) error {
 
 	WriteJSON(w, resp)
 	return nil
+}
+
+// goImportsCode reads code from request and performs "goimports" on it
+// if any error occurs, it sends error response to client and closes connection
+//
+// if "format" url query param is undefined or set to "false", just returns code as is
+func (s *Service) goImportsCode(ctx context.Context, src []byte) ([]byte, bool, error) {
+	resp, err := s.playground.GoImports(ctx, src)
+	if err != nil {
+		if err == goplay.ErrSnippetTooLarge {
+			return nil, false, NewHTTPError(http.StatusRequestEntityTooLarge, err)
+		}
+
+		return nil, false, err
+	}
+
+	if err = resp.HasError(); err != nil {
+		return nil, false, err
+	}
+
+	changed := resp.Body != string(src)
+	return []byte(resp.Body), changed, nil
 }

@@ -12,17 +12,18 @@ import (
 	"go.uber.org/zap"
 )
 
+// ValidateContentLength validates snippet size
 func ValidateContentLength(itemLen int) error {
 	if itemLen > maxSnippetSize {
 		return ErrSnippetTooLarge
 	}
-
 	return nil
 }
 
-func GetSnippet(ctx context.Context, snippetID string) (*Snippet, error) {
+// GetSnippet returns snippet from Go playground
+func (c *Client) GetSnippet(ctx context.Context, snippetID string) (*Snippet, error) {
 	fileName := snippetID + ".go"
-	resp, err := getRequest(ctx, "p/"+fileName)
+	resp, err := c.getRequest(ctx, "p/"+fileName)
 	if err != nil {
 		return nil, err
 	}
@@ -46,8 +47,9 @@ func GetSnippet(ctx context.Context, snippetID string) (*Snippet, error) {
 	}
 }
 
-func Share(ctx context.Context, src io.Reader) (string, error) {
-	resp, err := doRequest(ctx, http.MethodPost, "share", "text/plain", src)
+// Share shares snippet to go playground
+func (c *Client) Share(ctx context.Context, src io.Reader) (string, error) {
+	resp, err := c.doRequest(ctx, http.MethodPost, "share", "text/plain", src)
 	if err != nil {
 		return "", err
 	}
@@ -56,12 +58,13 @@ func Share(ctx context.Context, src io.Reader) (string, error) {
 	return shareID, nil
 }
 
-func GoImports(ctx context.Context, src []byte) (*FmtResponse, error) {
+// GoImports performs Goimports
+func (c *Client) GoImports(ctx context.Context, src []byte) (*FmtResponse, error) {
 	form := url.Values{}
 	form.Add("imports", "true")
 	form.Add("body", string(src))
 
-	resp, err := postForm(ctx, "fmt", form)
+	resp, err := c.postForm(ctx, "fmt", form)
 	if err != nil {
 		return nil, fmt.Errorf("failed to contact Go Playground - %s", err)
 	}
@@ -78,12 +81,13 @@ func GoImports(ctx context.Context, src []byte) (*FmtResponse, error) {
 	return dest, nil
 }
 
-func Compile(ctx context.Context, src []byte) (*CompileResponse, error) {
+// Compile runs code in goplayground and returns response
+func (c *Client) Compile(ctx context.Context, src []byte) (*CompileResponse, error) {
 	form := url.Values{}
 	form.Add("body", string(src))
 	form.Add("version", "2")
 
-	resp, err := postForm(ctx, "compile", form)
+	resp, err := c.postForm(ctx, "compile", form)
 	if err != nil {
 		return nil, err
 	}
@@ -91,7 +95,7 @@ func Compile(ctx context.Context, src []byte) (*CompileResponse, error) {
 	dest := &CompileResponse{}
 	if err := json.Unmarshal(resp, dest); err != nil {
 		// return response text as errors
-		return nil, fmt.Errorf("error from %q: %s", goPlayURL, string(resp))
+		return nil, fmt.Errorf("error from %q: %s", c.baseUrl, string(resp))
 	}
 
 	return dest, err
